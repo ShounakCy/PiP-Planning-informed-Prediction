@@ -9,6 +9,7 @@ from torch.utils.tensorboard import SummaryWriter
 from model import pipNet
 from data import highwayTrajDataset
 from utils import initLogging, maskedNLL, maskedMSE, maskedNLLTest
+import os
 
 ## Network Arguments
 parser = argparse.ArgumentParser(description='Training: Planning-informed Trajectory Prediction for Autonomous Driving')

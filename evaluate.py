@@ -7,7 +7,8 @@ from torch.utils.data import DataLoader
 from model import pipNet
 from data import highwayTrajDataset
 from utils import initLogging, maskedMSETest, maskedNLLTest
-
+import matplotlib.pyplot as plt
+import os
 
 ## Network Arguments
 parser = argparse.ArgumentParser(description='Evaluation: Planning-informed Trajectory Prediction for Autonomous Driving')
@@ -39,6 +40,102 @@ parser.add_argument("--num_workers", type=int, default=8, help="number of worker
 parser.add_argument('--metric',   type=str, help='RMSE & NLL is calculated by (agent/sample) based evaluation', default="agent")
 parser.add_argument("--plan_info_ds", type=int, default=1, help="N, further downsampling planning information to N*0.2s")
 
+def add_car(plt, x, y, alp):
+        plt.gca().add_patch(plt.Rectangle(
+            (x - 5, y - 5),  
+            10,  
+            5, 
+            color='maroon',
+            alpha=alp
+        ))
+
+def draw(hist, fut, nbrs, mask, fut_pred, train_flag, lon_man, lat_man, op_mask, indices):
+
+        hist = hist.cpu()
+        fut = fut.cpu()
+        nbrs = nbrs.cpu()
+        mask = mask.cpu()
+        op_mask = op_mask.cpu()
+        IPL = 0
+        scale = 1
+        prop =1
+        op =0
+        for i in range(hist.size(1)):
+            lon_man_i = lon_man[i].item()
+            lat_man_i = lat_man[i].item()
+            plt.axis('on')
+            plt.ylim(-18 * scale, 18 * scale)
+            plt.xlim(-180 * scale * prop, 180 * scale * prop)
+            plt.figure(dpi=300)
+            #plt.figure(dpi=300, figsize=(100 * scale * prop,40 *  scale))
+            plt.hlines([-18, -6, 6, 18], -180, 180, colors="c", linestyles="dashed")
+            #plt.savefig("01.png")
+            IPL_i = mask[i, :, :, :].sum().sum()
+            #print("IPL_i : ",IPL_i)
+            IPL_i = int((IPL_i / 64).item())
+            #print("IPL_i ::: ",IPL_i)
+            for ii in range(IPL_i):
+                plt.plot(nbrs[:, IPL + ii, 1] *  scale *  prop, nbrs[:, IPL + ii, 0] *  scale, ':',
+                         color='blue',
+                         linewidth=0.5)
+                #add_car(plt, nbrs[-1, IPL + ii, 1], nbrs[-1, IPL + ii, 0], alp=0.5)
+                #plt.savefig("001.png")
+            IPL = IPL + IPL_i
+            plt.plot(hist[:, i, 1] *  scale *  prop, hist[:, i, 0] *  scale, ':', color='red',
+                     linewidth=0.5)
+            #add_car(plt, hist[-1, i, 1], hist[-1, i, 0], alp=1)
+            #plt.savefig("02.png")
+            plt.plot(fut[:, i, 1] *  scale *  prop, fut[:, i, 0] *  scale, '-', color='black',
+                     linewidth=0.5)
+            #plt.savefig("03.png")
+            if train_flag:
+                fut_pred = fut_pred.detach().cpu()
+                # plt.plot(fut_pred[:, i, 1], fut_pred[:, i, 0], 'p', color='green', markersize=0.6)
+                plt.plot(fut_pred[:, i, 1] *  scale *  prop, fut_pred[:, i, 0] *  scale, color='green',
+                         linewidth=0.2)
+                
+                muX = fut_pred[:, i, 0]
+                muY = fut_pred[:, i, 1]
+                x = fut[:, i, 0]
+                y = fut[:, i, 1]
+                max_y = y[-1] - y[0]
+                out = torch.pow(x - muX, 2) + torch.pow(y - muY, 2)
+                acc = out * op_mask[:, i, 0]
+                loss = torch.sum(acc) / torch.sum(op_mask[:, i, 0])
+                #plt.savefig("04.png")
+            else:
+                for j in range(len(fut_pred)):
+                    fut_pred_i = fut_pred[j].detach().cpu()
+                    if j == indices[i].item():
+                        plt.plot(fut_pred_i[:, i, 1] *  scale *  prop, fut_pred_i[:, i, 0] *  scale,
+                                 color='red', linewidth=0.2)
+                        muX = fut_pred_i[:, i, 0]
+                        muY = fut_pred_i[:, i, 1]
+                        x = fut[:, i, 0]
+                        y = fut[:, i, 1]
+                        max_y = y[-1] - y[0]
+                        out = torch.pow(x - muX, 2) + torch.pow(y - muY, 2)
+                        acc = out * op_mask[:, i, 0]
+                        loss = torch.sum(acc) / torch.sum(op_mask[:, i, 0])
+                        #plt.savefig("05.png")
+                    else:
+                        plt.plot(fut_pred_i[:, i, 1] *  scale *  prop, fut_pred_i[:, i, 0] *  scale,
+                                 color='green', linewidth=0.2)
+                        #plt.savefig("06.png")
+            #plt.gca().set_aspect('equal', adjustable='box')
+            #plt.savefig('.\fig\' + str(lon_man_i + 1) + '_' + str(lat_man_i + 1) + '/' + str(op) + '.png')
+            script_dir = os.path.dirname(__file__)
+            results_dir = os.path.join(script_dir, 'Results/')
+            sample_file_dir = os.path.join(results_dir,str(lon_man_i + 1) + '_' + str(lat_man_i + 1)+'/')
+            file = str(op)
+            if not os.path.isdir(results_dir):
+                os.makedirs(results_dir)
+            if not os.path.isdir(sample_file_dir):
+                os.makedirs(sample_file_dir)
+            plt.savefig(sample_file_dir+ file)
+            op += 1
+            # fig.clf()
+            plt.close()
 
 def model_evaluate():
 
@@ -46,14 +143,16 @@ def model_evaluate():
 
     ## Initialize network
     PiP = pipNet(args)
-    PiP.load_state_dict(torch.load('./trained_models/{}/{}.tar'.format((args.name).split('-')[0], args.name)))
+    args.name = "highD_model"
+    args.test_set = "/efs/workspace/PiP-Planning-informed-Prediction/datasets/highD/test.mat"
+    PiP.load_state_dict(torch.load('/efs/workspace/PiP-Planning-informed-Prediction/trained_models/{}/{}.tar'.format((args.name).split('-')[0], args.name)))
     if args.use_cuda:
         PiP = PiP.cuda()
 
     ## Evaluation Mode
     PiP.eval()
     PiP.train_output_flag = False
-    initLogging(log_file='./trained_models/{}/evaluation.log'.format((args.name).split('-')[0]))
+    initLogging(log_file='/efs/workspace/PiP-Planning-informed-Prediction/trained_models/{}/evaluation.log'.format((args.name).split('-')[0]))
 
     ## Intialize dataset
     logging.info("Loading test data from {}...".format(args.test_set))
@@ -105,6 +204,7 @@ def model_evaluate():
             fut_pred, lat_pred, lon_pred = PiP(nbsHist, nbsMask, planFut, planMask, targsHist, targsEncMask, lat_enc, lon_enc)
 
             # Performance metric
+            indices = []
             if args.metric == 'agent':
                 dsIDs, targsIDs = tsSet.batchTargetVehsInfo(idxs)
                 l, c = maskedNLLTest(fut_pred, lat_pred, lon_pred, targsFut, targsFutMask, separately=True)
@@ -114,6 +214,7 @@ def model_evaluate():
                     lat_man = torch.argmax(lat_pred[k, :]).detach()
                     lon_man = torch.argmax(lon_pred[k, :]).detach()
                     indx = lon_man * 3 + lat_man
+                    indices.append(indx)
                     fut_pred_max[:, k, :] = fut_pred[indx][:, k, :]
                 # Using the most probable trajectory
                 ll, cc = maskedMSETest(fut_pred_max, targsFut, targsFutMask, separately=True)
@@ -121,11 +222,18 @@ def model_evaluate():
                 ll = ll.detach().cpu().numpy()
                 c = c.detach().cpu().numpy()
                 cc = cc.detach().cpu().numpy()
+                #if True:
+                lat_man = torch.argmax(lat_enc, dim=-1).detach()
+                lon_man = torch.argmax(lon_enc, dim=-1).detach()
+                draw(targsHist, targsFut, nbsHist, nbsMask, fut_pred, args.train_output_flag, lon_man, lat_man, targsFutMask,
+                            indices)
                 for j, targ in enumerate(targsIDs):
                     dsID = dsIDs[j]
                     nll_loss_stat[dsID, targ, :]   += l[:, j]
                     rmse_loss_stat[dsID, targ, :]  += ll[:, j]
                     both_count_stat[dsID, targ, :]  += c[:, j]
+            
+            
             elif args.metric == 'sample':
                 l, c = maskedNLLTest(fut_pred, lat_pred, lon_pred, targsFut, targsFutMask)
                 nll_loss += l.detach()
@@ -135,8 +243,12 @@ def model_evaluate():
                     lat_man = torch.argmax(lat_pred[k, :]).detach()
                     lon_man = torch.argmax(lon_pred[k, :]).detach()
                     indx = lon_man * 3 + lat_man
+                    indices.append(indx)
                     fut_pred_max[:, k, :] = fut_pred[indx][:, k, :]
                 l, c = maskedMSETest(fut_pred_max, targsFut, targsFutMask)
+                lat_man = torch.argmax(lat_enc, dim=-1).detach()
+                lon_man = torch.argmax(lon_enc, dim=-1).detach()
+                #draw(targsHist, targsFut, nbsHist, nbsMask, fut_pred, args.train_output_flag, lon_man, lat_man, targsFutMask,indices)
                 rmse_loss += l.detach()
                 rmse_counts += c.detach()
 
@@ -169,6 +281,8 @@ def model_evaluate():
         count_sum = np.sum(count_averaged, axis=1)
         rmseOverall = np.power(rmse_loss_sum / count_sum, 0.5) * 0.3048  # Unit converted from feet to meter.
         nllOverall = nll_loss_sum / count_sum
+    
+    
     elif args.metric == 'sample':
         rmseOverall = (torch.pow(rmse_loss / rmse_counts, 0.5) * 0.3048).cpu()
         nllOverall = (nll_loss / nll_counts).cpu()
@@ -176,6 +290,7 @@ def model_evaluate():
     # Print the metrics every 5 time frame (1s)
     logging.info("RMSE (m)\t=> {}, Mean={:.3f}".format(rmseOverall[4::5], rmseOverall[4::5].mean()))
     logging.info("NLL (nats)\t=> {}, Mean={:.3f}".format(nllOverall[4::5], nllOverall[4::5].mean()))
+
 
 
 if __name__ == '__main__':

@@ -43,30 +43,34 @@ class pipNet(nn.Module):
         self.softmax = nn.Softmax(dim=1)
 
         ## Define network parameters
-        ''' Convert traj to temporal embedding'''
+        ''' Convert traj to temporal embedding (2, 32)'''
         self.temporalConv = nn.Conv1d(in_channels=2, out_channels=self.temporal_embedding_size, kernel_size=3, padding=1)
 
-        ''' Encode the input temporal embedding '''
+        ''' Encode the input temporal embedding(32,64) '''
         self.nbh_lstm = nn.LSTM(input_size=self.temporal_embedding_size, hidden_size=self.encoder_size, num_layers=1)
         if self.use_planning:
             self.plan_lstm = nn.LSTM(input_size=self.temporal_embedding_size, hidden_size=self.encoder_size, num_layers=1)
 
-        ''' Encoded dynamic to dynamics_encoding_size'''
+        ''' Encoded dynamic to dynamics_encoding_size (64, 32)'''
         self.dyn_emb = nn.Linear(self.encoder_size, self.dynamics_encoding_size)
 
-        ''' Convolutional Social Pooling on the planned vehicle and all nbrs vehicles  '''
+        ''' Convolutional Social Pooling on the planned vehicle and all nbrs vehicles   '''
         self.nbrs_conv_social = nn.Sequential(
-            nn.Conv2d(self.encoder_size, self.soc_conv_depth, 3),
+            #(64,64)
+            nn.Conv2d(self.encoder_size, self.soc_conv_depth, 3), 
             self.leaky_relu,
             nn.MaxPool2d((3, 3), stride=2),
+            #(64,32)
             nn.Conv2d(self.soc_conv_depth, self.soc_conv2_depth, (3, 1)),
             self.leaky_relu
         )
         if self.use_planning:
             self.plan_conv_social = nn.Sequential(
+                #(64,64)
                 nn.Conv2d(self.encoder_size, self.soc_conv_depth, 3),
                 self.leaky_relu,
                 nn.MaxPool2d((3, 3), stride=2),
+                #(64,32)
                 nn.Conv2d(self.soc_conv_depth, self.soc_conv2_depth, (3, 1)),
                 self.leaky_relu
             )
@@ -77,28 +81,36 @@ class pipNet(nn.Module):
         ''' Target Fusion Module'''
         if self.use_fusion:
             ''' Fused Structure'''
+            ##(112,224)
             self.fcn_conv1 = nn.Conv2d(self.targ_enc_size, self.fuse_conv1_size, kernel_size=3, stride=1, padding=1)
             self.bn1 = nn.BatchNorm2d(self.fuse_conv1_size)
             self.fcn_pool1 = nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)
+            ##(224,448)
             self.fcn_conv2 = nn.Conv2d(self.fuse_conv1_size, self.fuse_conv2_size, kernel_size=3, stride=1, padding=1)
             self.bn2 = nn.BatchNorm2d(self.fuse_conv2_size)
             self.fcn_pool2 = nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)
+            ##(448, 224)
             self.fcn_convTrans1 = nn.ConvTranspose2d(self.fuse_conv2_size, self.fuse_conv1_size, kernel_size=3, stride=2, padding=1)
             self.back_bn1 = nn.BatchNorm2d(self.fuse_conv1_size)
+            ##(224, 112)
             self.fcn_convTrans2 = nn.ConvTranspose2d(self.fuse_conv1_size, self.fuse_enc_size, kernel_size=3, stride=2, padding=1)
             self.back_bn2 = nn.BatchNorm2d(self.fuse_enc_size)
         else:
             self.fuse_enc_size = 0
 
         ''' Decoder LSTM'''
+        ##(224,3)
         self.op_lat = nn.Linear(self.targ_enc_size + self.fuse_enc_size,
                                 self.num_lat_classes)  # output lateral maneuver.
+        ##(224,2)
         self.op_lon = nn.Linear(self.targ_enc_size + self.fuse_enc_size,
                                 self.num_lon_classes)  # output longitudinal maneuver.
+        ##(229,128)                        
         self.dec_lstm = nn.LSTM(input_size=self.targ_enc_size + self.fuse_enc_size + self.num_lat_classes + self.num_lon_classes,
                                       hidden_size=self.decoder_size)
 
         ''' Output layers '''
+        ##(128,5)
         self.op = nn.Linear(self.decoder_size, 5)
 
 

@@ -22,8 +22,8 @@ grid is splitted with size 25*5 (8x7 feet for each grid)
 grid_length=25; grid_width=5; cell_length=8; cell_width=7;
 
 % Save location
-raw_folder = sprintf('./dataset/highD/%dx%d_raw/', grid_length, grid_width);
-post_folder = sprintf('./dataset/highD/%dx%d/', grid_length, grid_width);
+raw_folder = sprintf('/efs/workspace/PiP-Planning-informed-Prediction/dataset/highD/%dx%d_raw/', grid_length, grid_width);
+post_folder = sprintf('/efs/workspace/PiP-Planning-informed-Prediction/dataset/highD/%dx%d/', grid_length, grid_width);
 mkdir(raw_folder); 
 mkdir(post_folder);
 
@@ -76,10 +76,10 @@ disp('Loading data...')
 for k = 1:dataset_to_use
     if mod(k,2)
         % forward side:
-        dataset_name = sprintf('./raw_highd_ngsim_format/%02d-fwd.csv', ceil(k/2));
+        dataset_name = sprintf('/efs/workspace/PiP-Planning-informed-Prediction/datasets/highd_ngsim_format/%02d-fwd.csv', ceil(k/2));
     else
         % backward side:
-        dataset_name = sprintf('./raw_highd_ngsim_format/%02d-bck.csv', ceil(k/2));
+        dataset_name = sprintf('./efs/workspace/PiP-Planning-informed-Prediction/datasets/highd_ngsim_format/%02d-bck.csv', ceil(k/2));
     end
     csv{k}  = readtable(dataset_name);
     traj{k} = csv{k}{:,1:14};
